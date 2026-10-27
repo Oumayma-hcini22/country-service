@@ -1,0 +1,44 @@
+pipeline {
+    agent any
+    tools {
+        jdk 'JDK21'
+        maven 'M2_HOME'
+    }
+    stages {
+        stage('Checkout code') {
+            steps {
+                git branch: 'main', url: 'https://github.com/Oumayma-hcini22/country-service.git'
+            }
+        }
+        stage('Build maven') {
+            steps {
+                sh 'mvn clean package'
+            }
+            post {
+                success {
+                    junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
+                }
+            }
+        }
+        stage('Build Dockerfile') {
+            steps {
+                sh 'docker build . -t my-country-service:$BUILD_NUMBER'
+                withCredentials([string(credentialsId: 'dockerhub-pwd', variable: 'dockerhubpwd')]) {
+                    sh 'echo "$dockerhubpwd" | docker login -u oumaymahcini --password-stdin'
+                }
+                sh 'docker tag my-country-service:$BUILD_NUMBER oumaymahcini/my-country-service:$BUILD_NUMBER'
+                sh 'docker push oumaymahcini/my-country-service:$BUILD_NUMBER'
+            }
+        }
+        stage('Deploy to Kubernetes') {
+            steps {
+                script {
+                    kubeconfig(credentialsId: 'kubeconfig-file', serverUrl: '') {
+                        sh 'kubectl apply -f deployment.yaml'
+                        sh 'kubectl apply -f service.yaml'
+                    }
+                }
+            }
+        }
+    }
+}
